@@ -30,36 +30,37 @@ globals
 [costmap i numberOfNegotiationsLeft file_list file_dir LUT have_lut im_w im_h]
 
 to initialise
-  clear-patches
   clear-turtles
+  clear-patches
   reset-ticks
   file-close-all
 
   set file_dir "lookuptables/"
-  set file_list [ "lut_1.csv"  "lut_2.csv"  "lut_3.csv"  "lut_4.csv"  "lut_5.csv"  "lut_6.csv"  "lut_7.csv"  "lut_8.csv"  "lut_9.csv" "lut_10.csv"  "lut_11.csv"  "lut_12.csv"  "lut_13.csv"  "lut_14.csv"  "lut_15.csv"]
+  ;set file_list [ "lut_1.csv" "lut_2.csv"]
+  set file_list [ "lut_1.csv"  "lut_2.csv"  "lut_3.csv"  "lut_4.csv"  "lut_5.csv"  "lut_6.csv"  "lut_7.csv"  "lut_8.csv"  "lut_9.csv" "lut_10.csv"  "lut_11.csv"  "lut_12.csv"  "lut_13.csv"  "lut_14.csv"]
   load_LUT
   setup-patches
   setup-dummies
 end
 
 to load_LUT ;should only happen once, per session. LUT will not be deleted if initialise is triggered
-  if have_lut = 0
-  [
+  ;if have_lut = 0
+  ;[
     set LUT []
     ; for each look-up table in the file list, read entire file into memory and append to LUT list
     foreach file_list [
       let current_file word file_dir ?
       set LUT lput csv:from-file current_file LUT
     ]
-    set have_lut 1
-  ]
+    ;set have_lut 1
+  ;]
 end
 
 to setup-patches
 
-  set costmap (bitmap:to-grayscale (bitmap:import "costmap.png"))
-  set im_w bitmap:width costmap / 2
-  set im_h bitmap:height costmap / 2
+  set costmap (bitmap:to-grayscale (bitmap:import "costmap2-disp.png"))
+  set im_w bitmap:width costmap
+  set im_h bitmap:height costmap
 
   ; set the world size to the exact image size, with positive indexing only
   resize-world ( 0 ) ( im_w ) ( 0 ) ( im_h )
@@ -71,7 +72,7 @@ to setup-patches
 
   ; set the patches initial states
   ask patches [
-    set traversal_cost (item 1 pcolor) / 25.5
+    set traversal_cost (item 1 pcolor) / 255
     set is_goal -1 ;means not a goal
     ]
 
@@ -95,7 +96,7 @@ end
 
 to setup-dummies
   set i 1
-  create-turtles 10
+  create-turtles num_agents
   [
     set color [0 127 255]
     set label-color red
@@ -120,8 +121,17 @@ to setup-dummies
     set shape "circle"
     set moving false
     set speed 1
-    while [([traversal_cost] of patch-here) > 8.8] ; avoid spawning dummys on obstacles
-    [setxy random-xcor random-ycor]]
+    let j 0
+    while [(cost-from-to X Y random 2) < 0 and j < 1000] ; avoid spawning dummys on obstacles
+    [
+      setxy random-xcor random-ycor
+      set X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
+      set Y [pycor] of patch-here
+      set j (j + 1)
+    ]
+    ;setxy X Y
+    ]
+
 end
 
 to-report generate-propositions
@@ -201,43 +211,48 @@ to run-simulation
 end
 
 to-report cost-from-to [start_x start_y goal_idx]
-  let line_nr (start_y * im_h) + start_x  + 1 ;because the first line contains the goal coordinates
-  ; read from back to front:
-  ;; from the look-up table, related to goal_idx,
-  ;; on the line related to start pixel, get item indexed by 2 (the cost)
+  let line_nr (start_x * im_h) + (im_h - start_y)  + 1
 
   report item 2 (item line_nr item goal_idx LUT)
 end
 
-to-report get-next-waypoint[start_x start_y step goal_idx]
-  let line_nr (start_y * im_h) + start_x  + 1 ;because the first line contains the goal coordinates
-  ; given which step you are on, and how many steps there are in total (see item 3 in the list)
-  ; get the X and Y coordinates to be your next waypoint (if they are reversed, it may be because they are in row-colum order)
-  ; if you get mirrored results, invert the Y-axis by taking im_h - Y,
-  ;let  wp
-  report list random im_w random im_h; here you will have to read a different item from the list, check the LUT definition
+to-report get-next-waypoint[start_x start_y goal_idx]
+  let line_nr (start_x * im_h) + (im_h - start_y) + 1
+
+  let numSteps item 3 (item line_nr item goal_idx LUT)
+  let X item 3 (item line_nr item goal_idx LUT)
+  let Y item 4 (item line_nr item goal_idx LUT)
+  report (list X Y);
 end
+
 
 ;;========================================================================================================================
 
 to dummy-init-movement
   if not moving [
-    set goal_nr random 14
-    let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
-    let Y [pycor] of patch-here
-    let C cost-from-to X Y goal_nr
-    if C > 0
+    let C -1
+    let X 0
+    let Y 0
+    let j 0
+    while [C < 0 and j < 100]
+    [
+      set goal_nr random 14
+      set X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
+      set Y [pycor] of patch-here
+      set C cost-from-to X Y goal_nr
+      set j (j + 1)
+    ]
+    ifelse (j < 100)
     [
       set path_start_x X
       set path_start_y Y
       set path_step 0
       set moving true
-      set waypoint get-next-waypoint X Y path_step goal_nr
-
-      ;get two waypoints and interpolate linearly between them with speed * tick
-      ;alternatively, set the agents x and y coordinates to the next waypoint at each iteration
+      set waypoint get-next-waypoint X Y goal_nr
     ]
-
+    [
+      set label "Broken"
+    ]
   ]
 end
 
@@ -247,24 +262,28 @@ to do-movement
     let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
     let Y [pycor] of patch-here
     let cost [traversal_cost] of patch-here
-    let goal-nr-here [traversal_cost] of patch-here
+    let goal-nr-here [is_goal] of patch-here
 
+    set label reduce word (list (item 0 waypoint) ":" (item 1 waypoint) ";" X ":" Y)
 
-    ifelse X != item 0 waypoint and Y != item 1 waypoint
+    ifelse X = item 0 waypoint and Y = item 1 waypoint
     [
-      facexy item 0 waypoint item 1 waypoint
-      forward (speed) / (cost + 1)
-    ]
-    [
-      ifelse goal_nr != goal-nr-here
-      [
-        set waypoint get-next-waypoint X Y path_step goal_nr
-      ]
+      ifelse goal_nr = goal-nr-here
       [
         set moving false
         dummy-init-movement
       ]
+      [
+        ;set waypoint get-next-waypoint path_start_x path_start_y path_step goal_nr
+        set waypoint get-next-waypoint X Y goal_nr
+        ;set path_step (path_step + 1)
+      ]
     ]
+    [
+      facexy item 0 waypoint item 1 waypoint
+      forward (speed) / (cost * 10 + 1)
+    ]
+
 
 
   ]
@@ -362,7 +381,7 @@ num_agents
 num_agents
 0
 100
-5
+15
 1
 1
 NIL
