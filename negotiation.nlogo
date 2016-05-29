@@ -1,10 +1,10 @@
 __includes["communication.nls" "bdi.nls"]
 
 extensions
-[table bitmap csv]
+[array table bitmap csv]
 
 turtles-own [
-  locations
+  goals
   my-propositions
   pindex
   other-proposition
@@ -27,7 +27,7 @@ patches-own
 [traversal_cost is_goal]
 
 globals
-[costmap i numberOfNegotiationsLeft file_list file_dir LUT have_lut im_w im_h]
+[costmap goalList numberOfNegotiationsLeft file_list file_dir LUT have_lut im_w im_h]
 
 to initialise
   clear-turtles
@@ -44,21 +44,21 @@ to initialise
 end
 
 to load_LUT ;should only happen once, per session. LUT will not be deleted if initialise is triggered
-  ;if have_lut = 0
-  ;[
+  if have_lut = 0
+  [
     set LUT []
     ; for each look-up table in the file list, read entire file into memory and append to LUT list
     foreach file_list [
       let current_file word file_dir ?
       set LUT lput csv:from-file current_file LUT
     ]
-    ;set have_lut 1
-  ;]
+    set have_lut 1
+  ]
 end
 
 to setup-patches
 
-  set costmap (bitmap:to-grayscale (bitmap:import "costmap2-disp.png"))
+  set costmap (bitmap:to-grayscale (bitmap:import "costmap2.png"))
   set im_w bitmap:width costmap
   set im_h bitmap:height costmap
 
@@ -72,36 +72,50 @@ to setup-patches
 
   ; set the patches initial states
   ask patches [
-    set traversal_cost (item 1 pcolor) / 255
+    set traversal_cost ((item 1 pcolor) / 25.5 * 0.9) + 1
     set is_goal -1 ;means not a goal
     ]
 
-   let goal_number -1
+   let goal_number 0
+   set goalList table:make
    foreach LUT
    [
-     set goal_number goal_number + 1
-     ask patch (item 0 item 0 ?) (item 1 item 0 ?) [
+
+     let X (item 0 item 0 ?)
+     let Y (item 1 item 0 ?)
+
+     ask patch X Y [
        set pcolor [255 0 0]
-       set is_goal goal_number ;means it is a goal, and also tells you which (zero to 14 are goals that match the indices in the file-list)
+       set is_goal goal_number
+       set plabel goal_number
      ]
+     table:put goalList goal_number (array:from-list (list X Y -1))
+
+     set goal_number goal_number + 1
    ]
 
 end
 
 
 to init-random-locations-to-turtles
-  ;TODO
+
+  foreach table:keys goalList
+  [
+    let value table:get goalList ?
+    let key ?
+    ask one-of turtles [table:put goals key value]
+  ]
 end
 
 
 to setup-dummies
-  set i 1
+  let i 1
   create-turtles num_agents
   [
     set color [0 127 255]
     set label-color red
     set size 1
-    set locations no-turtles
+    set goals table:make
     set id i
     set i i + 1
 
@@ -111,27 +125,28 @@ to setup-dummies
     set my-propositions generate-propositions
     set pindex 0
 
-    setxy random-xcor random-ycor
+    set-random-world-pos
     let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
     let Y [pycor] of patch-here
     set waypoint list X Y
-
-    set path_step 0
-
     set shape "circle"
-    set moving false
     set speed 1
     let j 0
     while [(cost-from-to X Y random 2) < 0 and j < 1000] ; avoid spawning dummys on obstacles
     [
-      setxy random-xcor random-ycor
+      set-random-world-pos
       set X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
       set Y [pycor] of patch-here
       set j (j + 1)
     ]
     ;setxy X Y
     ]
+  init-random-locations-to-turtles
+  ask turtles [add-intention "set-closest-goal" "false"]
+end
 
+to set-random-world-pos
+    setxy (random im_w) (random im_h )
 end
 
 to-report generate-propositions
@@ -157,10 +172,6 @@ to start-model
     ;ask turtles add-intention go-to-location
   ]
   ask turtles [execute-intentions]
-end
-
-to go-to-goal
-  ;TODO
 end
 
 to send-proposition
@@ -204,15 +215,49 @@ to process-message
      ]
 end
 
+
+
+
+
+;;========================================================================================================================
+
+
 to run-simulation
-  ask turtles [dummy-init-movement]
-  ask turtles [do-movement]
+  ask turtles [execute-intentions]
+
+  if check-if-done
+  [
+    stop
+  ]
   tick
+end
+
+to-report check-if-done
+  let goal-not-visited false
+  let max-ticks 0
+  foreach table:keys goalList
+  [
+    let goal table:get goalList ?
+    let nticks (array:item goal 2)
+    if nticks < 0
+    [
+      set goal-not-visited true
+    ]
+    if nticks > max-ticks
+    [
+      set max-ticks nticks
+    ]
+  ]
+
+  if not goal-not-visited
+  [
+    show max-ticks
+  ]
+  report not goal-not-visited
 end
 
 to-report cost-from-to [start_x start_y goal_idx]
   let line_nr (start_x * im_h) + (im_h - start_y)  + 1
-
   report item 2 (item line_nr item goal_idx LUT)
 end
 
@@ -226,66 +271,82 @@ to-report get-next-waypoint[start_x start_y goal_idx]
 end
 
 
-;;========================================================================================================================
+
+to set-closest-goal
+  let min-index -1
+  let min-cost 10000000
+  let X [pxcor] of patch-here
+  let Y [pycor] of patch-here
+  foreach table:keys goals
+  [
+    let XY table:get goals ?
+    let key ?
+    let cost cost-from-to X Y key
+    if cost < min-cost
+    [
+      set min-index key
+      set min-cost cost
+    ]
+  ]
+  if not (min-index = -1)
+  [
+    set goal_nr min-index
+    table:remove goals goal_nr
+    add-intention "scan-here" "true"
+    add-intention "do-movement" "at-goal-current-goal"
+    set waypoint get-next-waypoint X Y goal_nr
+  ]
+end
+
+
+
+to do-movement
+  let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
+  let Y [pycor] of patch-here
+  let cost [traversal_cost] of patch-here
+  let goal-nr-here [is_goal] of patch-here
+
+  ;set label reduce word (list (item 0 waypoint) ":" (item 1 waypoint) ";" X ":" Y ":" goal_nr)
+  set label (list goal_nr ":" table:keys goals)
+
+  ifelse X = item 0 waypoint and Y = item 1 waypoint
+  [
+    set waypoint get-next-waypoint X Y goal_nr
+  ]
+  [
+    facexy item 0 waypoint item 1 waypoint
+    forward (speed) / (cost)
+  ]
+end
+
+to-report at-goal-current-goal
+  let goal-nr-here [is_goal] of patch-here
+  report (goal_nr = goal-nr-here)
+end
+
+to scan-here
+  ask patch-here [
+    set pcolor [0 255 0]
+    let goal table:get goalList is_goal
+    let nticks ticks
+    array:set goal 2 nticks
+    set plabel (list is_goal nticks)
+  ]
+end
 
 to dummy-init-movement
   if not moving [
     let C -1
     let X 0
     let Y 0
-    let j 0
-    while [C < 0 and j < 100]
+    while [C < 0]
     [
       set goal_nr random 14
       set X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
       set Y [pycor] of patch-here
       set C cost-from-to X Y goal_nr
-      set j (j + 1)
     ]
-    ifelse (j < 100)
-    [
-      set path_start_x X
-      set path_start_y Y
-      set path_step 0
-      set moving true
-      set waypoint get-next-waypoint X Y goal_nr
-    ]
-    [
-      set label "Broken"
-    ]
-  ]
-end
-
-to do-movement
-  if moving
-  [
-    let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
-    let Y [pycor] of patch-here
-    let cost [traversal_cost] of patch-here
-    let goal-nr-here [is_goal] of patch-here
-
-    set label reduce word (list (item 0 waypoint) ":" (item 1 waypoint) ";" X ":" Y)
-
-    ifelse X = item 0 waypoint and Y = item 1 waypoint
-    [
-      ifelse goal_nr = goal-nr-here
-      [
-        set moving false
-        dummy-init-movement
-      ]
-      [
-        ;set waypoint get-next-waypoint path_start_x path_start_y path_step goal_nr
-        set waypoint get-next-waypoint X Y goal_nr
-        ;set path_step (path_step + 1)
-      ]
-    ]
-    [
-      facexy item 0 waypoint item 1 waypoint
-      forward (speed) / (cost * 10 + 1)
-    ]
-
-
-
+    set moving true
   ]
 end
 @#$#@#$#@
@@ -381,7 +442,7 @@ num_agents
 num_agents
 0
 100
-15
+6
 1
 1
 NIL
