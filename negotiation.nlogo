@@ -1,33 +1,31 @@
-__includes["communication.nls" "bdi.nls"]
+__includes["communication.nls" "bdi.nls" "environment.nls" "messages.nls"]
 
 extensions
-[array table bitmap csv]
+[array table bitmap csv ]
 
 turtles-own [
   goals
-  my-propositions
-  pindex
-  other-proposition
+  otherGoals
+  myProposition
+  otherProposition
+  otherPosition
+  negotiationStage
+
   incoming-queue
   intentions
   beliefs
-  agents-to-negotiate-with
-  id
 
   speed
   moving
   goal_nr
-  goal-list goal-list-index
   waypoint
-  path_start_x path_start_y
-  path_step
 ]
 
 patches-own
 [traversal_cost is_goal]
 
 globals
-[costmap goalList numberOfNegotiationsLeft file_list file_dir LUT have_lut im_w im_h]
+[costmap goalList file_list file_dir LUT have_lut im_w im_h negotiationPairs negotiationIndex negotiationConverged negotiationTest]
 
 to initialise
   clear-turtles
@@ -36,94 +34,51 @@ to initialise
   file-close-all
 
   set file_dir "lookuptables/"
-  ;set file_list [ "lut_1.csv" "lut_2.csv"]
   set file_list [ "lut_1.csv"  "lut_2.csv"  "lut_3.csv"  "lut_4.csv"  "lut_5.csv"  "lut_6.csv"  "lut_7.csv"  "lut_8.csv"  "lut_9.csv" "lut_10.csv"  "lut_11.csv"  "lut_12.csv"  "lut_13.csv"  "lut_14.csv"]
+  set negotiationIndex 0
+  set negotiationConverged false
+  set negotiationTest true
+
   load_LUT
   setup-patches
-  setup-dummies
+  setup-agents
+  generateNegotiaionPairs
 end
 
-to load_LUT ;should only happen once, per session. LUT will not be deleted if initialise is triggered
-  if have_lut = 0
+to generateNegotiaionPairs
+  let numPairs num_agents * (num_agents - 1) / 2
+  set negotiationPairs array:from-list n-values numPairs [list 0 0]
+  let initatorId 0
+  let index 0
+  while [initatorId < num_agents]
   [
-    set LUT []
-    ; for each look-up table in the file list, read entire file into memory and append to LUT list
-    foreach file_list [
-      let current_file word file_dir ?
-      set LUT lput csv:from-file current_file LUT
+    let secondId 0
+
+    while [secondId < num_agents]
+    [
+      if (initatorId < secondId)
+      [
+        array:set negotiationPairs index (list initatorId secondId)
+        set index index + 1
+      ]
+       set secondId secondId + 1
     ]
-    set have_lut 1
+    set initatorId initatorId + 1
   ]
+;  set numberOfNegotiationsLeft numPairs
+  show negotiationPairs
 end
 
-to setup-patches
-
-  set costmap (bitmap:to-grayscale (bitmap:import "costmap2.png"))
-  set im_w bitmap:width costmap
-  set im_h bitmap:height costmap
-
-  ; set the world size to the exact image size, with positive indexing only
-  resize-world ( 0 ) ( im_w ) ( 0 ) ( im_h )
-  ; resize the patches for visualization
-  set-patch-size 4
-
-  ; copy the pixel values to the patch colors
-  bitmap:copy-to-pcolors (costmap) false
-
-  ; set the patches initial states
-  ask patches [
-    set traversal_cost ((item 1 pcolor) / 25.5 * 0.9) + 1
-    set is_goal -1 ;means not a goal
-    ]
-
-   let goal_number 0
-   set goalList table:make
-   foreach LUT
-   [
-
-     let X (item 0 item 0 ?)
-     let Y (item 1 item 0 ?)
-
-     ask patch X Y [
-       set pcolor [255 0 0]
-       set is_goal goal_number
-       set plabel goal_number
-     ]
-     table:put goalList goal_number (array:from-list (list X Y -1))
-
-     set goal_number goal_number + 1
-   ]
-
-end
-
-
-to init-random-locations-to-turtles
-
-  foreach table:keys goalList
-  [
-    let value table:get goalList ?
-    let key ?
-    ask one-of turtles [table:put goals key value]
-  ]
-end
-
-
-to setup-dummies
-  let i 1
+to setup-agents
   create-turtles num_agents
   [
     set color [0 127 255]
     set label-color red
     set size 1
     set goals table:make
-    set id i
-    set i i + 1
-
     set intentions []
     set incoming-queue []
     set beliefs []
-    set my-propositions generate-propositions
-    set pindex 0
 
     set-random-world-pos
     let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
@@ -131,6 +86,7 @@ to setup-dummies
     set waypoint list X Y
     set shape "circle"
     set speed 1
+
     let j 0
     while [(cost-from-to X Y random 2) < 0 and j < 1000] ; avoid spawning dummys on obstacles
     [
@@ -139,88 +95,75 @@ to setup-dummies
       set Y [pycor] of patch-here
       set j (j + 1)
     ]
-    ;setxy X Y
     ]
-  init-random-locations-to-turtles
-  ask turtles [add-intention "set-closest-goal" "false"]
+  init-random-goals-to-turtles
+  ask turtles
+  [
+    set label (list who table:keys goals)
+    add-intention "set-closest-goal" "false"
+    add-intention "negotiate" "negotiation-done"
+  ]
 end
 
-to set-random-world-pos
-    setxy (random im_w) (random im_h )
+;to init-random-goals-to-turtles
+;
+;  foreach table:keys goalList
+;  [
+;    let value table:get goalList ?
+;    let key ?
+;    ask one-of turtles [table:put goals key value]
+;  ]
+;end
+
+to init-random-goals-to-turtles
+  let i 0
+  foreach table:keys goalList
+  [
+    let value table:get goalList ?
+    let key ?
+    ask turtle (i mod num_agents) [table:put goals key value]
+    set i i + 1
+  ]
 end
 
-to-report generate-propositions
-  ;TODO
-  let tab table:make
-  table:put tab "locations"  []
-  table:put tab "myCost"  10
-  table:put tab "yourCost"  5
-  report tab
+to-report negotiation-done
+  report negotiationConverged
 end
 
 to-report other-agents
   report []
 end
 
-to start-model
-  if numberOfNegotiationsLeft > 0
+to update-negotation-status
+  set negotiationIndex negotiationIndex + 1
+  if (negotiationIndex >= array:length negotiationPairs - 1)
   [
-    ;ask turtles add-intention do negotiation
+    set negotiationIndex 0;
+    if negotiationTest
+    [
+      set negotiationConverged true
+    ]
+    set negotiationTest true
   ]
-  if numberOfNegotiationsLeft = 0
-  [
-    ;ask turtles add-intention go-to-location
-  ]
-  ask turtles [execute-intentions]
 end
 
-to send-proposition
-  ;TODO
-end
+to negotiate
+  let initiatorId -1
+  let otherId -1
+  ;while [initiatorId != id and otherId != id and negotiationIndex < array:length negotiationPairs]
+  ;[
+    set initiatorId item 0 (array:item negotiationPairs negotiationIndex)
+    set otherId item 1 (array:item negotiationPairs negotiationIndex)
+    ;set negotiationIndex negotiationIndex + 1
+  ;]
 
-to evaluate-proposition
-  ;Risk?
-  let my-risk 1
-  let your-risk 1
-  ifelse cost-of-proposition my-propositions <= cost-of-proposition other-proposition
+  if (initiatorId = who and negotiationStage = 0)
   [
-    ;Send accept-proposal
+    send my-goals-message (otherId)
+    set negotiationStage 1
   ]
-  [
-    ;Send reject-proposal
-  ]
-  if my-risk < your-risk
-  [
-    ;Send proposal
-  ]
-
+  add-intention "process-message" "true"
 end
-
-to-report cost-of-proposition [proposition]
-  report 1
-end
-
-to process-message
-  let msg get-message
-  if get-performative msg = "propose"
-     [
-      set other-proposition get-content msg
-      add-intention "evaluate-proposition" "true"
-      ;if get-content msg = "no-beer" [add-intention "ask-for-beer" "true"]
-      ;if get-content msg = "have-beer"
-      ;   [
-      ;     add-intention "waiting-for-my-drink" "true"
-      ;     send add-content "bring-some" create-reply "request" msg
-      ;     ]
-     ]
-end
-
-
-
-
-
-;;========================================================================================================================
-
 
 to run-simulation
   ask turtles [execute-intentions]
@@ -232,129 +175,79 @@ to run-simulation
   tick
 end
 
-to-report check-if-done
-  let goal-not-visited false
-  let max-ticks 0
-  foreach table:keys goalList
+to enact-proposition [proposition]
+  foreach (item 0 proposition)
   [
-    let goal table:get goalList ?
-    let nticks (array:item goal 2)
-    if nticks < 0
-    [
-      set goal-not-visited true
-    ]
-    if nticks > max-ticks
-    [
-      set max-ticks nticks
-    ]
+    table:remove goals ?
   ]
-
-  if not goal-not-visited
+  foreach (item 1 proposition)
   [
-    show max-ticks
+    table:put goals ? table:get goalList ?
   ]
-  report not goal-not-visited
+  set negotiationStage 0
+  set negotiationTest false
+  set label (list who table:keys goals)
 end
 
-to-report cost-from-to [start_x start_y goal_idx]
-  let line_nr (start_x * im_h) + (im_h - start_y)  + 1
-  report item 2 (item line_nr item goal_idx LUT)
+to-report evaluate-proposition
+  ;Risk?
+  ;let my-risk 1
+  ;let your-risk 1
+  report cost-of-proposition myProposition <= cost-of-proposition otherProposition
 end
 
-to-report get-next-waypoint[start_x start_y goal_idx]
-  let line_nr (start_x * im_h) + (im_h - start_y) + 1
-
-  let numSteps item 3 (item line_nr item goal_idx LUT)
-  let X item 3 (item line_nr item goal_idx LUT)
-  let Y item 4 (item line_nr item goal_idx LUT)
-  report (list X Y);
-end
-
-
-
-to set-closest-goal
-  let min-index -1
-  let min-cost 10000000
+to-report cost-of-proposition [proposition]
+  let costSum 0
   let X [pxcor] of patch-here
   let Y [pycor] of patch-here
+  foreach table:keys proposition
+  [
+    set costSum costSum + cost-from-to X Y ?
+  ]
+  report costSum
+end
+
+to-report goals-to-trade
+  let goalCostDiff table:make
+  let otherGoalCostDiff table:make
+
+  let X [pxcor] of patch-here
+  let Y [pycor] of patch-here
+
+  let otherX (item 0 otherPosition)
+  let otherY (item 1 otherPosition)
+
+
   foreach table:keys goals
   [
-    let XY table:get goals ?
-    let key ?
-    let cost cost-from-to X Y key
-    if cost < min-cost
+    let costDiff  (cost-from-to X Y ?) - (cost-from-to otherX otherY ?)
+    if costDiff > 0
     [
-      set min-index key
-      set min-cost cost
+      table:put goalCostDiff ? costDiff
     ]
   ]
-  if not (min-index = -1)
+  foreach otherGoals
   [
-    set goal_nr min-index
-    table:remove goals goal_nr
-    add-intention "scan-here" "true"
-    add-intention "do-movement" "at-goal-current-goal"
-    set waypoint get-next-waypoint X Y goal_nr
-  ]
-end
-
-
-
-to do-movement
-  let X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
-  let Y [pycor] of patch-here
-  let cost [traversal_cost] of patch-here
-  let goal-nr-here [is_goal] of patch-here
-
-  ;set label reduce word (list (item 0 waypoint) ":" (item 1 waypoint) ";" X ":" Y ":" goal_nr)
-  set label (list goal_nr ":" table:keys goals)
-
-  ifelse X = item 0 waypoint and Y = item 1 waypoint
-  [
-    set waypoint get-next-waypoint X Y goal_nr
-  ]
-  [
-    facexy item 0 waypoint item 1 waypoint
-    forward (speed) / (cost)
-  ]
-end
-
-to-report at-goal-current-goal
-  let goal-nr-here [is_goal] of patch-here
-  report (goal_nr = goal-nr-here)
-end
-
-to scan-here
-  ask patch-here [
-    set pcolor [0 255 0]
-    let goal table:get goalList is_goal
-    let nticks ticks
-    array:set goal 2 nticks
-    set plabel (list is_goal nticks)
-  ]
-end
-
-to dummy-init-movement
-  if not moving [
-    let C -1
-    let X 0
-    let Y 0
-    while [C < 0]
+    let costDiff (cost-from-to otherX otherY ?) - (cost-from-to X Y ?)
+    if costDiff > 0
     [
-      set goal_nr random 14
-      set X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
-      set Y [pycor] of patch-here
-      set C cost-from-to X Y goal_nr
+      table:put otherGoalCostDiff ? costDiff
     ]
-    set moving true
   ]
+
+  let minLength min (list table:length goalCostDiff table:length otherGoalCostDiff)
+
+  set goalCostDiff table:from-list sublist (sort-by [item 1 ?1 < item 1 ?2] (table:to-list goalCostDiff)) 0 minLength
+  set otherGoalCostDiff table:from-list sublist (sort-by [item 1 ?1 < item 1 ?2] (table:to-list otherGoalCostDiff)) 0 minLength
+
+  report (list table:keys goalCostDiff table:keys otherGoalCostDiff)
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-231
-60
-1045
-575
+17
+115
+831
+630
 -1
 -1
 4.0
@@ -378,10 +271,10 @@ ticks
 30.0
 
 BUTTON
-56
-51
-153
-84
+13
+19
+110
+52
 set/reset
 initialise
 NIL
@@ -395,21 +288,21 @@ NIL
 1
 
 SWITCH
-53
-505
-199
-538
+175
+23
+321
+56
 show_messages
 show_messages
-1
+0
 1
 -1000
 
 BUTTON
-72
-256
-135
-289
+14
+62
+77
+95
 Start
 run-simulation
 T
@@ -423,10 +316,10 @@ NIL
 1
 
 SWITCH
-53
-538
-196
-571
+178
+56
+321
+89
 show-intentions
 show-intentions
 1
@@ -434,15 +327,15 @@ show-intentions
 -1000
 
 SLIDER
-43
-144
-215
-177
+345
+25
+822
+58
 num_agents
 num_agents
-0
+2
 100
-6
+7
 1
 1
 NIL

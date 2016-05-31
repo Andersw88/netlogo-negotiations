@@ -1,0 +1,70 @@
+
+to-report proposition-message [receiver proposition]
+  let msg create-message "propose"
+  set msg add-receiver receiver msg
+  set msg add-content (proposition) msg
+  report msg
+end
+
+to-report my-goals-message [receiver]
+  let myPosition (list [pxcor] of patch-here [pycor] of patch-here)
+  let msg create-message "inform"
+  set msg add-receiver receiver msg
+  set msg add-content (list myPosition table:keys goals) msg
+  report msg
+end
+
+to-report accept-proposal-message [receiver]
+  let msg create-message "accept-proposal"
+  set msg add-receiver receiver msg
+  set msg add-content "" msg
+  report msg
+end
+
+to-report cancel-message [receiver]
+  let msg create-message "cancel"
+  set msg add-receiver receiver msg
+  set msg add-content "" msg
+  report msg
+end
+
+
+to process-message
+  let msg get-message
+  let performative get-performative msg
+  if performative = "inform"
+  [
+    let content get-content msg
+    set otherPosition (item 0 content)
+    set otherGoals (item 1 content)
+    set myProposition goals-to-trade
+    ifelse not (empty? item 0 goals-to-trade)
+    [
+      send proposition-message (get-sender msg) myProposition
+    ]
+    [
+      send cancel-message (get-sender msg)
+      set negotiationStage 0
+    ]
+  ]
+  if performative = "propose"
+  [
+    set otherProposition get-content msg
+    
+    ;if evaluate-proposition
+    ;[
+      send accept-proposal-message (get-sender msg)
+      enact-proposition (list item 1 otherProposition item 0 otherProposition)
+    ;]
+    update-negotation-status
+  ]
+  if performative = "accept-proposal"
+  [
+    enact-proposition myProposition
+  ]
+  if performative = "cancel"
+  [
+    set negotiationStage 0
+    update-negotation-status
+  ]
+end
