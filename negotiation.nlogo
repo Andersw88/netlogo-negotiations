@@ -34,7 +34,10 @@ to initialise
   file-close-all
 
   set file_dir "lookuptables/"
-  set file_list [ "lut_1.csv"  "lut_2.csv"  "lut_3.csv"  "lut_4.csv"  "lut_5.csv"  "lut_6.csv"  "lut_7.csv"  "lut_8.csv"  "lut_9.csv" "lut_10.csv"  "lut_11.csv"  "lut_12.csv"  "lut_13.csv"  "lut_14.csv"]
+
+  let num_locations 64
+  set file_list map [reduce word (list "lut_" ? ".csv")] (n-values num_locations [ ? + 1 ])
+
   set negotiationIndex 0
   set negotiationConverged false
   set negotiationTest true
@@ -88,7 +91,7 @@ to setup-agents
     set speed 1
 
     let j 0
-    while [(cost-from-to X Y random 2) < 0 and j < 1000] ; avoid spawning dummys on obstacles
+    while [([traversal_cost] of patch-here) > 8] ; avoid spawning dummys on obstacles
     [
       set-random-world-pos
       set X [pxcor] of patch-here ;don't use agents xy cors because they are non-integer
@@ -106,7 +109,6 @@ to setup-agents
 end
 
 ;to init-random-goals-to-turtles
-;
 ;  foreach table:keys goalList
 ;  [
 ;    let value table:get goalList ?
@@ -141,6 +143,7 @@ to update-negotation-status
     set negotiationIndex 0;
     if negotiationTest
     [
+      show (list "negotiation done" ticks)
       set negotiationConverged true
     ]
     set negotiationTest true
@@ -294,7 +297,7 @@ SWITCH
 56
 show_messages
 show_messages
-0
+1
 1
 -1000
 
@@ -334,8 +337,8 @@ SLIDER
 num_agents
 num_agents
 2
-100
-7
+30
+14
 1
 1
 NIL

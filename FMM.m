@@ -4,8 +4,8 @@ function [cost_from_goal_map] = FMM(end_pos, base_cost, cost_map)
 	% method = 'dijkstra';
 	niter = Inf;
 
-	obstacle = max(max(cost_map))*0.7;
-	cost_map(cost_map>=obstacle) = 10e8; 
+% 	obstacle = max(max(cost_map))*0.7;
+% 	cost_map(cost_map>=obstacle) = 10e8; 
     
 
 	[y_size, x_size] = size(cost_map);

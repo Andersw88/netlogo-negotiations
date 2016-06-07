@@ -80,15 +80,13 @@ end
 
 to-report cost-from-to [start_x start_y goal_idx]
   let line_nr (start_x * im_h) + (im_h - start_y)  + 1
-  report item 2 (item line_nr item goal_idx LUT)
+  report item 0 (item line_nr item goal_idx LUT)
 end
 
 to-report get-next-waypoint[start_x start_y goal_idx]
   let line_nr (start_x * im_h) + (im_h - start_y) + 1
-
-  let numSteps item 3 (item line_nr item goal_idx LUT)
-  let X item 3 (item line_nr item goal_idx LUT)
-  let Y item 4 (item line_nr item goal_idx LUT)
+  let X item 1 (item line_nr item goal_idx LUT)
+  let Y item 2 (item line_nr item goal_idx LUT)
   report (list X Y);
 end
 
