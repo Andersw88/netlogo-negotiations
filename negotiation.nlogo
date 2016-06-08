@@ -25,18 +25,25 @@ patches-own
 [traversal_cost is_goal]
 
 globals
-[costmap goalList file_list file_dir LUT have_lut im_w im_h negotiationPairs negotiationIndex negotiationConverged negotiationTest]
+[costmap goalList file_list file_dir LUT have_lut im_w im_h negotiationPairs negotiationIndex negotiationConverged negotiationTest
+  run_index run_data num_agents num_goals ticks_negotiation_done ticks_done]
 
-to initialise
+to slider_init
+   set num_goals num_goals_slider
+   set num_agents num_agents_slider
+   set run_data array:from-list n-values 1 [0]
+   set run_index 0
+   initialize
+end
+
+to initialize
   clear-turtles
   clear-patches
   reset-ticks
   file-close-all
 
   set file_dir "lookuptables/"
-
-  let num_locations 64
-  set file_list map [reduce word (list "lut_" ? ".csv")] (n-values num_locations [ ? + 1 ])
+  set file_list map [reduce word (list "lut_" ? ".csv")] (n-values num_goals [ ? + 1 ])
 
   set negotiationIndex 0
   set negotiationConverged false
@@ -69,7 +76,7 @@ to generateNegotiaionPairs
     set initatorId initatorId + 1
   ]
 ;  set numberOfNegotiationsLeft numPairs
-  show negotiationPairs
+  ;show negotiationPairs
 end
 
 to setup-agents
@@ -108,15 +115,6 @@ to setup-agents
   ]
 end
 
-;to init-random-goals-to-turtles
-;  foreach table:keys goalList
-;  [
-;    let value table:get goalList ?
-;    let key ?
-;    ask one-of turtles [table:put goals key value]
-;  ]
-;end
-
 to init-random-goals-to-turtles
   let i 0
   foreach table:keys goalList
@@ -143,7 +141,9 @@ to update-negotation-status
     set negotiationIndex 0;
     if negotiationTest
     [
-      show (list "negotiation done" ticks)
+      set ticks_negotiation_done ticks
+      ;table:put run_data run_index ticks
+      ;show (list "negotiation done" ticks)
       set negotiationConverged true
     ]
     set negotiationTest true
@@ -176,6 +176,44 @@ to run-simulation
     stop
   ]
   tick
+end
+
+to run-all
+  let num_agents_list [2 5 10 15 20 25]
+  let num_goals_list [14]
+  let num_runs_per_setup n-values 10 [ ? + 1 ]
+  let iteration 0
+
+  let num_iteration_total (length num_agents_list) * (length num_goals_list) * (length num_runs_per_setup)
+  set run_data array:from-list n-values num_iteration_total [0]
+  set run_index 0
+  foreach num_goals_list
+  [
+    set num_goals ?
+    foreach num_agents_list
+    [
+      set num_agents ?
+      foreach num_runs_per_setup
+      [
+        let isFinnished false
+        initialize
+        while [not isFinnished]
+        [
+          ask turtles [execute-intentions]
+          if check-if-done
+          [
+            set isFinnished true
+            array:set run_data run_index (list num_goals num_agents ticks_negotiation_done ticks_done)
+            ;csv:to-row data_file (list num_goals num_agents ticks_negotiation_done ticks_done )
+          ]
+          tick
+        ]
+        set run_index run_index + 1
+      ]
+    ]
+  ]
+  csv:to-file "data.csv" array:to-list run_data
+  show run_data
 end
 
 to enact-proposition [proposition]
@@ -279,7 +317,7 @@ BUTTON
 110
 52
 set/reset
-initialise
+slider_init
 NIL
 1
 T
@@ -334,10 +372,42 @@ SLIDER
 25
 822
 58
-num_agents
-num_agents
+num_agents_slider
+num_agents_slider
 2
 30
+3
+1
+1
+NIL
+HORIZONTAL
+
+BUTTON
+92
+65
+158
+98
+NIL
+run-all
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+391
+79
+563
+112
+num_goals_slider
+num_goals_slider
+1
+64
 14
 1
 1

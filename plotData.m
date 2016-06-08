@@ -1,26 +1,22 @@
+clear all
 
-x = 2:14;
-y = [3947, 3415, 3456, 2280, 2191, 2714, 2317, 1955, 2260, 2826, 1712, 1508, 1752];
-y2 = [1,15, 45, 49, 77, 125, 231, 213, 397,309,377,447,545];
+m = csvread('data.csv');
+x = m(:,2);
+y3 = m(:,3); %Negotiation time
+y2 = m(:,4); %Scan time
+y = y3 + y2; %Total time
 
-y3 = y-y2;
+x_u = unique(x)';
+means = zeros(size(x_u));
+stds = zeros(size(x_u));
+for i = 1:length(x_u)
+    means(i) = mean(m(m(:,2) == x_u(i),4));
+    stds(i) = std(m(m(:,2) == x_u(i),4));
+end
 
+[means',stds']
 
-
-
-
-c1 = polyfit(x, y, 1);
-c2 = polyfit(x, y2, 1);
-c3 = polyfit(x, y3, 1);
-fx = linspace(min(x), max(x), 200);
-fy = polyval(c1, fx);
-fy2 = polyval(c2, fx);
-fy3 = polyval(c3, fx);
-plot(x,y,'x','Color','r'); hold on;
-
-plot(x,y3,'x','Color','green'); hold on;
-plot(x,y2,'x','Color','blue'); hold on;
-plot(fx, fy,'Color','red');
-plot(fx, fy2,'Color','blue');
-plot(fx, fy3,'Color','green');
-legend('Total time','Scan time','Negotiation time');
+errorbar(x_u, means, stds, 'b-'); hold on;
+plot(x_u, means, 'bx');
+xlabel('No of agents');
+ylabel('Ticks taken to complete');	

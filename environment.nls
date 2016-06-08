@@ -1,14 +1,14 @@
 to load_LUT
-  if have_lut = 0
-  [
+  ;if have_lut = 0
+  ;[
     set LUT []
 
     foreach file_list [
       let current_file word file_dir ?
       set LUT lput csv:from-file current_file LUT
     ]
-    set have_lut 1
-  ]
+  ;  set have_lut 1
+  ;]
 end
 
 to setup-patches
@@ -73,7 +73,9 @@ to-report check-if-done
 
   if not goal-not-visited
   [
-    show max-ticks
+    set ticks_done (max-ticks - ticks_negotiation_done)
+    ;show max-ticks
+    ;table:put run_data run_index (list max-ticks (table:get run_data run_index))
   ]
   report not goal-not-visited
 end
